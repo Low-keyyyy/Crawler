@@ -31,7 +31,7 @@ This crawler program is specifically designed for **the web version of Xiaohongs
    python main.py
    ```
 
-6. **Enter the Keyword **
+6. **Enter the Keyword**
 
    You can enter the keyword of the content you want to crawl in the terminal. The the script will start crawling automatically.
 
