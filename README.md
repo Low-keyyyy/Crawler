@@ -8,7 +8,7 @@ This crawler program is specifically designed for **the web version of Xiaohongs
    Clone this repository to your local machine:
 
    ```
-   git clone https://github.com/low-keyyyy/Crawler.git
+   git clone https://github.com/Low-keyyyy/Crawler.git
    ```
 
 2. **Install Dependencies**  
