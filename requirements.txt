@@ -1,0 +1,4 @@
+DrissionPage>=3.0.0
+tqdm>=4.65.0
+pandas>=2.0.0
+openpyxl>=3.0.0  # 用于pandas保存Excel文件 
