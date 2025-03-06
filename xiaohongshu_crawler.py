@@ -1,10 +1,12 @@
 from DrissionPage import ChromiumOptions, Chromium
 from DrissionPage.common import Settings
+from datetime import datetime, timedelta
 from tqdm import tqdm
 from urllib.parse import quote
 import time
 import random
 import pandas as pd
+import re
 
 
 class XiaohongshuScraper:
@@ -29,7 +31,6 @@ class XiaohongshuScraper:
             page_scroll_down: Scroll page down with random delay
             save_to_excel: Save scraped data to Excel
     '''
-    # Edge browser configuration
     CONFIG = {
         'browser_path': r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
         'headless': False, # It is recommended to set to False because there may be some captchas during scraping.
@@ -39,6 +40,7 @@ class XiaohongshuScraper:
     LOG_ALLOWED = False
     LIKE_LIMIT = True
     MINIMUM_LIKES = 50
+    COMMENT_LOCK = True
 
     def __init__(self):
         self.page = None
@@ -72,7 +74,7 @@ class XiaohongshuScraper:
         self.page.get(
             f'https://www.xiaohongshu.com/search_result?keyword={keyword_encode}&source=web_search_result_notes'
         )
-        time.sleep(3)  # Wait for page load
+        time.sleep(5)  # Wait for page load
 
     def get_info(self):
         """Extract information from current page"""
@@ -100,23 +102,23 @@ class XiaohongshuScraper:
                     author = author_wrapper.ele('.author').text
 
                     # Get likes
-                    like = footer.ele('.like-wrapper like-active').text
+                    like_text = footer.ele('.like-wrapper like-active').text
+                    like = re.search(r'\d+', like_text).group(0)
                     if not like:
                         like = "0"
 
                     # Like limit check
-                    if XiaohongshuScraper.LIKE_LIMIT:
-                        if int(like) < XiaohongshuScraper.MINIMUM_LIKES:
-                            continue
-                    
-                    # Get note detail
-                    text, comments = self.get_note_detail(note_link)
-                        
-                    # Add to contents list & comments list
                     if XiaohongshuScraper.LIKE_LIMIT and int(like) < XiaohongshuScraper.MINIMUM_LIKES:
                         continue
-                    self.contents.append([title, author, like, text])
-                    self.comments.extend(comments)
+                    
+                    # Get note detail
+                    text, comments, date = self.get_note_detail(note_link)
+                        
+                    # Add to contents list & comments list
+                    self.contents.append([title, date, author, like, text])
+                    print(f"\nNumber of notes scraped: {len(self.contents)}\n")
+                    if not XiaohongshuScraper.COMMENT_LOCK:
+                        self.comments.extend(comments)
                 except Exception as e:
                     if XiaohongshuScraper.LOG_ALLOWED:
                         print(f"Error extracting note info: {e}")
@@ -124,7 +126,7 @@ class XiaohongshuScraper:
 
             # Calculate and display the time taken for the current page
             page_time = time.time() - page_start_time
-            print(f"\nCurrent page scraping completed, time taken: {page_time:.2f} seconds")
+            print(f"\nCurrent page scraping completed, time taken: {page_time:.2f} seconds\n")
 
         except Exception as e:
             if XiaohongshuScraper.LOG_ALLOWED:
@@ -138,7 +140,7 @@ class XiaohongshuScraper:
 
             # Open the note detail page
             note_link.click()
-            time.sleep(2)  # Wait for page load
+            time.sleep(3)  # Wait for page load
 
             # Get container and close button
             container = self.page.ele('.note-container', timeout=0)
@@ -149,14 +151,19 @@ class XiaohongshuScraper:
             for piece in content:
                 text += piece.text.strip()
 
+            # Get date
+            date_description = container.ele('.bottom-container', timeout=0).ele('.date', timeout=0).text
+            date = self.date_analysis(date_description)
+            
             # Get comments
-            comments_container = container.ele('.comments-container', timeout=0)
-            comments = self.get_comments(comments_container)
+            if not XiaohongshuScraper.COMMENT_LOCK:
+                comments_container = container.ele('.comments-container', timeout=0)
+                comments = self.get_comments(comments_container)
 
             # Close the note detail page
             close_button.click()
-            time.sleep(2)
-            return (text, comments)
+            time.sleep(3)
+            return (text, comments, date)
 
         except Exception as e:
             if XiaohongshuScraper.LOG_ALLOWED:
@@ -201,11 +208,32 @@ class XiaohongshuScraper:
         end_time = time.time()
         print(f"Total time taken: {end_time - start_time:.2f} seconds")
 
+    def date_analysis(self, date_description):
+        """Analyze date description"""
+        date = ""
+        now = datetime.now().date()
+        if "今天" in date_description:
+            date = now.strftime("%Y-%m-%d")
+        elif "昨天" in date_description:
+            date = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        elif re.search(r'\d+ 天前', date_description):
+            days = re.search(r'\d+', date_description).group(0)
+            date = (now - timedelta(days=int(days))).strftime("%Y-%m-%d")
+        elif re.search(r'\d{4}-\d{2}-\d{2}', date_description):
+            date = re.search(r'\d{4}-\d{2}-\d{2}', date_description).group(0)
+        elif re.search(r'\d{1}-\d{2}', date_description):
+            date = str(now.year) + "-0" + re.search(r'\d{1}-\d{2}', date_description).group(0)
+        else:
+            print(date_description)
+            date = re.search(r'\d{2}-\d{2}', date_description).group(0)
+            date = str(now.year) + "-" + date
+        return date
+
     def save_to_excel(self, keyword):
         """Save scraped data to Excel"""
         # Create DataFrame
         columns = [
-            'title', 'author', 'like', 'text'
+            'title', 'date', 'author', 'like', 'text'
         ]
         df = pd.DataFrame(self.contents, columns=columns)
 
@@ -220,8 +248,9 @@ class XiaohongshuScraper:
         df.to_excel(excel_path, index=False)
 
         # Save comments to Excel
-        comments_df = pd.DataFrame(self.comments, columns=['comments'])
-        comments_df.to_excel(f'xiaohongshu_{keyword}_comments.xlsx', index=False)
+        if not XiaohongshuScraper.COMMENT_LOCK:
+            comments_df = pd.DataFrame(self.comments, columns=['comments'])
+            comments_df.to_excel(f'xiaohongshu_{keyword}_comments.xlsx', index=False)
 
 
 def main():
@@ -234,7 +263,7 @@ def main():
     # Set keyword and start scraping
     keyword = input("Enter search keyword: ")
     scraper.search(keyword)
-    scraper.crawl(times=40)
+    scraper.crawl(times=50)
     scraper.save_to_excel(keyword)
 
 
