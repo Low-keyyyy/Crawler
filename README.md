@@ -28,7 +28,7 @@ This crawler program is specifically designed for **the web version of Xiaohongs
    Execute the crawler by running the main script:
 
    ```
-   python main.py
+   python xiaohongshu_crawler.py
    ```
 
 6. **Enter the Keyword**
